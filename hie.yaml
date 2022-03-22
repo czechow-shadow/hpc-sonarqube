@@ -1,0 +1,16 @@
+# Upon change, also update hie.yaml.cbl and hie.yaml.stack
+
+cradle:
+  multi:
+          #    - path: "Setup.sh"
+          #      config: { cradle: { none:  } }
+    - path: "./"
+      config:
+        cradle:
+          stack:
+            - path: "./src"
+              component: "hpc-codecov:lib"
+            - path: "./app"
+              component: "hpc-codecov:exe:hpc-codecov"
+            - path: "./test"
+              component: "hpc-codecov:test:test-main"

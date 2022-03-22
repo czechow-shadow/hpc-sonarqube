@@ -27,7 +27,7 @@ import Control.Monad.ST            (ST)
 import Data.Function               (on)
 import Data.List                   (foldl', intersperse)
 import System.IO                   (IOMode (..), hPutStrLn, stderr, stdout,
-                                    withFile)
+                                    withFile, Handle)
 #if !MIN_VERSION_base(4,11,0)
 import Data.Monoid                 ((<>))
 #endif
@@ -57,7 +57,7 @@ import Trace.Hpc.Util              (HpcPos, fromHpcPos)
 
 -- Internal
 import Trace.Hpc.Codecov.Exception
-
+import qualified Text.XML.Light as XML
 
 -- ------------------------------------------------------------------------
 --
@@ -141,7 +141,8 @@ genReport rpt =
      let mb_out = reportOutFile rpt
          oname = maybe "stdout" show mb_out
      say rpt ("Writing JSON report to " ++ oname)
-     emitCoverageJSON mb_out entries
+     -- emitCoverageJSON mb_out entries -- FIXME
+     emitCoverageXML mb_out entries
      say rpt "Done"
 
 -- | Generate test coverage entries.
@@ -155,10 +156,19 @@ emitCoverageJSON ::
                  -- 'stdout'.
   -> [CoverageEntry] -- ^ Coverage entries to write.
   -> IO ()
-emitCoverageJSON mb_outfile entries = wrap emit
+emitCoverageJSON mb_outfile entries =
+  case mb_outfile of
+    Just outfile -> withFile outfile WriteMode emit
+    Nothing -> emit stdout
   where
-    wrap = maybe ($ stdout) (`withFile` WriteMode) mb_outfile
-    emit = flip hPutBuilder (buildJSON entries)
+    emit :: Handle -> IO ()
+    emit h = hPutBuilder h $ buildJSON entries
+
+emitCoverageXML :: Maybe FilePath -> [CoverageEntry] -> IO ()
+emitCoverageXML fp'm es = case fp'm of
+  Just _ -> error "NIY"
+  Nothing -> putStrLn $ buildXML es
+
 
 
 -- ------------------------------------------------------------------------
@@ -166,6 +176,44 @@ emitCoverageJSON mb_outfile entries = wrap emit
 -- Internal
 --
 -- ------------------------------------------------------------------------
+buildXML :: [CoverageEntry] -> String
+buildXML es = XML.ppcElement XML.prettyConfigPP el
+  where
+    -- el :: XML.Element
+    -- el = (XML.node (qn "coverage") (XML.Attr (qn "version") "1"))
+    --      { XML.elContent = pure $ XML.Elem $
+    --        XML.node (qn "file") (XML.Attr (qn "path") "src/Lib.hs")
+    --      }
+    el :: XML.Element
+    el = (XML.node (qn "coverage") (XML.Attr (qn "version") "1"))
+         { XML.elContent = map (XML.Elem . toFileElem) es }
+
+    toFileElem :: CoverageEntry -> XML.Element
+    toFileElem (CoverageEntry file hits) =
+      (XML.node (qn "file") (XML.Attr (qn "path") file))
+      { XML.elContent = map (XML.Elem . toLineElem) hits }
+      -- XML.node (qn "lineToCover") ())
+         -- )
+    toLineElem :: (Int, Hit) -> XML.Element
+    toLineElem (lineNumber, hit) =
+      XML.node (qn "lineToCover") $
+       [XML.Attr (qn "lineNumber") (show lineNumber)] <> hitToCoveredAttrs hit
+
+    hitToCoveredAttrs :: Hit -> [XML.Attr]
+    hitToCoveredAttrs hit = case hit of
+      Missed -> [mkAttr "covered" "false"]
+      Partial -> [ mkAttr "covered" "false" -- FIXME: bug in partial eval?
+                 -- ,  mkAttr "branchesToCover" "2"
+                 -- ,  mkAttr "coveredBranches" "1"
+                 ]
+      Full -> [mkAttr "covered" "true"]
+      where
+        mkAttr :: String -> String -> XML.Attr
+        mkAttr n v = XML.Attr (qn n) v
+
+
+qn :: String -> XML.QName
+qn n = XML.QName n Nothing Nothing
 
 -- | Build simple JSON report from coverage entries.
 buildJSON :: [CoverageEntry] -> Builder
