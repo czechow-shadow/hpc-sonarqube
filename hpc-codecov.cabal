@@ -61,6 +61,7 @@ library
                      , filepath    >= 1.4.1 && < 1.5
                      , hpc         >= 0.6   && < 0.7
                      , xml
+                     , containers
   default-language:    Haskell2010
   ghc-options:         -Wall
 

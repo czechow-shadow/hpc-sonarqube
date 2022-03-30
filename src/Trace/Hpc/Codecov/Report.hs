@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE NamedFieldPuns #-}
 -- |
 -- Module:     Trace.Hpc.Codecov.Report
 -- Copyright:  (c) 2022 8c6794b6
@@ -17,31 +18,16 @@ module Trace.Hpc.Codecov.Report
     -- * Functions
   , genReport
   , genCoverageEntries
-  , emitCoverageJSON
   ) where
 
 -- base
 import Control.Exception           (ErrorCall, handle, throw, throwIO)
 import Control.Monad               (mplus, when)
-import Control.Monad.ST            (ST)
 import Data.Function               (on)
-import Data.List                   (foldl', intersperse)
-import System.IO                   (IOMode (..), hPutStrLn, stderr, stdout,
-                                    withFile, Handle)
+import System.IO                   (hPutStrLn, stderr)
 #if !MIN_VERSION_base(4,11,0)
 import Data.Monoid                 ((<>))
 #endif
-
--- array
-import Data.Array.Base             (unsafeAt)
-import Data.Array.IArray           (bounds, listArray, range, (!))
-import Data.Array.MArray           (newArray, readArray, writeArray)
-import Data.Array.ST               (STUArray, runSTUArray)
-import Data.Array.Unboxed          (UArray)
-
--- bytestring
-import Data.ByteString.Builder     (Builder, char7, hPutBuilder, intDec,
-                                    string7, stringUtf8)
 
 -- directory
 import System.Directory            (doesFileExist)
@@ -50,15 +36,18 @@ import System.Directory            (doesFileExist)
 import System.FilePath             ((<.>), (</>))
 
 -- hpc
-import Trace.Hpc.Mix               (BoxLabel (..), Mix (..), MixEntry,
-                                    readMix)
+import Trace.Hpc.Mix               (BoxLabel (..), Mix (..), readMix)
 import Trace.Hpc.Tix               (Tix (..), TixModule (..), readTix)
 import Trace.Hpc.Util              (HpcPos, fromHpcPos)
 
 -- Internal
 import Trace.Hpc.Codecov.Exception
-import qualified Text.XML.Light as XML
 
+import qualified Text.XML.Light as XML
+import qualified Data.Map.Strict as M
+import           Data.Map.Strict (Map)
+import Data.List (partition, foldl')
+import Data.Bifunctor (Bifunctor (bimap))
 -- ------------------------------------------------------------------------
 --
 -- Exported
@@ -121,7 +110,7 @@ mappendReport r1 r2 =
 -- for detail.
 data CoverageEntry =
   CoverageEntry { ce_filename :: FilePath -- ^ Source code file name.
-                , ce_hits     :: LineHits -- ^ Line hits of the file.
+                , ce_hits     :: [(LineNum, CovInfo)]
                 } deriving (Eq, Show)
 
 -- | Pair of line number and hit tag.
@@ -150,23 +139,9 @@ genCoverageEntries :: Report -> IO [CoverageEntry]
 genCoverageEntries rpt =
   readTixFile rpt (reportTix rpt) >>= tixToCoverage rpt
 
--- | Emit simple coverage JSON data.
-emitCoverageJSON ::
-  Maybe FilePath -- ^ 'Just' output file name, or 'Nothing' for
-                 -- 'stdout'.
-  -> [CoverageEntry] -- ^ Coverage entries to write.
-  -> IO ()
-emitCoverageJSON mb_outfile entries =
-  case mb_outfile of
-    Just outfile -> withFile outfile WriteMode emit
-    Nothing -> emit stdout
-  where
-    emit :: Handle -> IO ()
-    emit h = hPutBuilder h $ buildJSON entries
-
 emitCoverageXML :: Maybe FilePath -> [CoverageEntry] -> IO ()
 emitCoverageXML fp'm es = case fp'm of
-  Just _ -> error "NIY"
+  Just file -> writeFile file $ buildXML es
   Nothing -> putStrLn $ buildXML es
 
 
@@ -179,11 +154,6 @@ emitCoverageXML fp'm es = case fp'm of
 buildXML :: [CoverageEntry] -> String
 buildXML es = XML.ppcElement XML.prettyConfigPP el
   where
-    -- el :: XML.Element
-    -- el = (XML.node (qn "coverage") (XML.Attr (qn "version") "1"))
-    --      { XML.elContent = pure $ XML.Elem $
-    --        XML.node (qn "file") (XML.Attr (qn "path") "src/Lib.hs")
-    --      }
     el :: XML.Element
     el = (XML.node (qn "coverage") (XML.Attr (qn "version") "1"))
          { XML.elContent = map (XML.Elem . toFileElem) es }
@@ -192,67 +162,81 @@ buildXML es = XML.ppcElement XML.prettyConfigPP el
     toFileElem (CoverageEntry file hits) =
       (XML.node (qn "file") (XML.Attr (qn "path") file))
       { XML.elContent = map (XML.Elem . toLineElem) hits }
-      -- XML.node (qn "lineToCover") ())
-         -- )
-    toLineElem :: (Int, Hit) -> XML.Element
-    toLineElem (lineNumber, hit) =
-      XML.node (qn "lineToCover") $
-       [XML.Attr (qn "lineNumber") (show lineNumber)] <> hitToCoveredAttrs hit
 
-    hitToCoveredAttrs :: Hit -> [XML.Attr]
-    hitToCoveredAttrs hit = case hit of
-      Missed -> [mkAttr "covered" "false"]
-      Partial -> [ mkAttr "covered" "false" -- FIXME: bug in partial eval?
-                 -- ,  mkAttr "branchesToCover" "2"
-                 -- ,  mkAttr "coveredBranches" "1"
-                 ]
-      Full -> [mkAttr "covered" "true"]
-      where
-        mkAttr :: String -> String -> XML.Attr
-        mkAttr n v = XML.Attr (qn n) v
+    toLineElem :: (Int, CovInfo) -> XML.Element
+    toLineElem (lineNumber, covInfo) =
+      XML.node (qn "lineToCover") $
+       [XML.Attr (qn "lineNumber") (show lineNumber)] <> covInfoToCoveredAttrs covInfo
+
+    covInfoToCoveredAttrs :: CovInfo -> [XML.Attr]
+    covInfoToCoveredAttrs CiCovered = [mkAttr "covered" "true"]
+    covInfoToCoveredAttrs CiNotCovered = [mkAttr "covered" "false"]
+    covInfoToCoveredAttrs CiPartial{covCnt, notCovCnt} =
+      [ mkAttr "covered" "true"
+      , mkAttr "branchesToCover" (show $ covCnt + notCovCnt)
+      , mkAttr "coveredBranches" (show covCnt)
+      ]
+    mkAttr :: String -> String -> XML.Attr
+    mkAttr n v = XML.Attr (qn n) v
 
 
 qn :: String -> XML.QName
 qn n = XML.QName n Nothing Nothing
-
--- | Build simple JSON report from coverage entries.
-buildJSON :: [CoverageEntry] -> Builder
-buildJSON entries = contents
-  where
-    contents =
-      braced (key (string7 "coverage") <>
-              braced (listify (map report entries))) <>
-      char7 '\n'
-    report ce =
-      key (stringUtf8 (ce_filename ce)) <>
-      braced (listify (map hit (ce_hits ce)))
-    key x = dquote x <> char7 ':'
-    dquote x = char7 '"' <> x <> char7 '"'
-    braced x = char7 '{' <> x <> char7 '}'
-    listify xs = mconcat (intersperse comma xs)
-    comma = char7 ','
-    hit (n, tag) =
-      case tag of
-        Missed  -> k <> char7 '0'
-        Partial -> k <> dquote (char7 '1' <> char7 '/' <> char7 '2')
-        Full    -> k <> char7 '1'
-      where
-        k = key (intDec n)
 
 tixToCoverage :: Report -> Tix -> IO [CoverageEntry]
 tixToCoverage rpt (Tix tms) = mapM (tixModuleToCoverage rpt)
                                    (excludeModules rpt tms)
 
 tixModuleToCoverage :: Report -> TixModule -> IO CoverageEntry
-tixModuleToCoverage rpt tm@(TixModule name _hash _count _ixs) =
+tixModuleToCoverage rpt tm@(TixModule name _hash _count ixs) =
   do say rpt ("Search mix:   " ++ name)
      Mix path _ _ _ entries <- readMixFile (reportMixDirs rpt) tm
      say rpt ("Found mix:    "++ path)
-     let Info _ min_line max_line hits = makeInfo tm entries
-         lineHits = makeLineHits min_line max_line hits
+
+     let lineHits = makeInfo ixs entries
      path' <- ensureSrcPath rpt path
      return (CoverageEntry { ce_filename = path'
                            , ce_hits = lineHits })
+
+data CovInfo = CiCovered
+             | CiNotCovered
+             | CiPartial { covCnt :: !Int
+                         , notCovCnt :: ! Int
+                         } deriving (Eq, Show)
+
+makeInfo :: [Integer] -> [(HpcPos, BoxLabel)] -> [(LineNum, CovInfo)]
+makeInfo ticks mes =
+  let infos = uncurry zip3 (unzip mes) $ map (>0) ticks
+  in M.toAscList $
+     M.map toCovInfo $
+     foldl' f M.empty infos
+  where
+    toCovInfo :: [Bool] -> CovInfo
+    toCovInfo xs = case bimap length length $ partition (== True) xs of
+      (0, _) -> CiNotCovered
+      (_, 0) -> CiCovered
+      (covCnt, notCovCnt) -> CiPartial {covCnt, notCovCnt}
+
+    f :: Map LineNum [Bool] -> (HpcPos, BoxLabel, Bool) -> Map LineNum [Bool]
+    f acc (hpcPos, lab, cov) = case lab of
+      ExpBox _ -> markSpan acc [ls .. le] cov
+      TopLevelBox _ -> acc
+      LocalBox _ -> markSpan acc [ls .. le] cov
+      BinBox _ _ -> acc
+      where
+        (ls, _, le, _) = fromHpcPos hpcPos
+
+    markSpan :: Map LineNum [Bool] -> [LineNum] -> Bool -> Map LineNum [Bool]
+    markSpan m ls cov = foldl' g m ls
+      where
+        g :: Map LineNum [Bool] -> LineNum -> Map LineNum [Bool]
+        g m' l = M.alter h l m'
+
+        h :: Maybe [Bool] -> Maybe [Bool]
+        h Nothing = Just [cov]
+        h (Just vs) = Just $ cov:vs
+
+type LineNum = Int
 
 -- | Exclude modules specified in given 'Report'.
 excludeModules :: Report -> [TixModule] -> [TixModule]
@@ -300,96 +284,3 @@ ensureSrcPath rpt path = go [] (reportSrcDirs rpt)
 -- | Print given message to 'stderr' when the verbose flag is 'True'.
 say :: Report -> String -> IO ()
 say rpt msg = when (reportVerbose rpt) (hPutStrLn stderr msg)
-
--- | Internal type synonym to represent code line hit.
-type Tick = Int
-
--- | Internal type used for accumulating mix entries.
-data Info =
-  Info {-# UNPACK #-} !Int -- ^ Index count
-       {-# UNPACK #-} !Int -- ^ Min line number
-       {-# UNPACK #-} !Int -- ^ Max line number
-       ![(HpcPos, Tick)] -- ^ Pair of position and hit
-
--- | Make line hits from intermediate info.
-makeLineHits :: Int -> Int -> [(HpcPos, Tick)] -> LineHits
-makeLineHits min_line max_line hits = ticksToHits (runSTUArray work)
-  where
-    work =
-      do arr <- newArray (min_line, max_line) ignored
-         mapM_ (updateHit arr) hits
-         return arr
-    updateHit arr (pos, hit) =
-      let (ls, _, _, _) = fromHpcPos pos
-      in  updateOne arr hit ls
-    updateOne :: STUArray s Int Int -> Tick -> Int -> ST s ()
-    updateOne arr hit i =
-      do prev <- readArray arr i
-         writeArray arr i (mergeEntry prev hit)
-    mergeEntry prev hit
-      | isIgnored prev              = hit
-      | isMissed prev, isMissed hit = missed
-      | isFull prev, isFull hit     = full
-      | otherwise                   = partial
-
--- | Convert array of ticks to list of hits.
-ticksToHits :: UArray Int Tick -> LineHits
-ticksToHits arr = foldr f [] (range (bounds arr))
-  where
-    f i acc =
-      case arr ! i of
-        tck | isIgnored tck -> acc
-            | isMissed tck  -> (i, Missed) : acc
-            | isFull tck    -> (i, Full) : acc
-            | otherwise     -> (i, Partial) : acc
-
-ignored, missed, partial, full :: Tick
-ignored = -1
-missed = 0
-partial = 1
-full = 2
-
-isIgnored :: Int -> Bool
-isIgnored = (== ignored)
-
-isMissed :: Int -> Bool
-isMissed = (== missed)
-
-isFull :: Int -> Bool
-isFull = (== full)
-
-notTicked, tickedOnlyTrue, tickedOnlyFalse, ticked :: Tick
-notTicked = missed
-tickedOnlyTrue = partial
-tickedOnlyFalse = partial
-ticked = full
-
--- See also: "utils/hpc/HpcMarkup.hs" in "ghc" git repository.
-makeInfo :: TixModule -> [MixEntry] -> Info
-makeInfo tm = foldl' f z
-  where
-    z = Info 0 maxBound 0 []
-    f (Info i min_line max_line acc) (pos, boxLabel) =
-      let binBox = case (isTicked i, isTicked (i+1)) of
-                     (False, False) -> acc
-                     (True,  False) -> (pos, tickedOnlyTrue) : acc
-                     (False, True)  -> (pos, tickedOnlyFalse) : acc
-                     (True, True)   -> acc
-          tickBox = if isTicked i
-                       then (pos, ticked) : acc
-                       else (pos, notTicked) : acc
-          acc' = case boxLabel of
-                   ExpBox {}      -> tickBox
-                   TopLevelBox {} -> tickBox
-                   LocalBox {}    -> tickBox
-                   BinBox _ True  -> binBox
-                   _              -> acc
-          (ls, _, le, _) = fromHpcPos pos
-      in Info (i+1) (min ls min_line) (max le max_line) acc'
-
-    -- Hope that mix file does not contain out of bound index.
-    isTicked n = unsafeAt arr_tix n /= 0
-
-    arr_tix :: UArray Int Int
-    arr_tix = listArray (0, size - 1) (map fromIntegral tixs)
-    TixModule _name _hash size tixs = tm
