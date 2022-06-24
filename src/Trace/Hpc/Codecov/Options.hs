@@ -54,7 +54,7 @@ data Options = Options
   , optExcludes    :: [String]
     -- ^ Module name strings to exclude from coverage report.
   , optOutFile     :: Maybe FilePath
-    -- ^ Output file to write JSON report, if given.
+    -- ^ Output file to write report, if given.
 
   , optVerbose     :: Bool
     -- ^ Flag for showing verbose message during coverage report

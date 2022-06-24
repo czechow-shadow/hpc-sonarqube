@@ -1,5 +1,7 @@
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE NamedFieldPuns   #-}
+{-# LANGUAGE ViewPatterns     #-}
+{-# LANGUAGE RecordWildCards  #-}
+{-# LANGUAGE TupleSections #-}
 -- |
 -- Module:     Trace.Hpc.Codecov.Report
 -- Copyright:  (c) 2022 8c6794b6
@@ -11,13 +13,8 @@
 module Trace.Hpc.Codecov.Report
   ( -- * Types
     Report(..)
-  , CoverageEntry(..)
-  , LineHits
-  , Hit(..)
-
     -- * Functions
   , genReport
-  , genCoverageEntries
   ) where
 
 -- base
@@ -25,9 +22,6 @@ import Control.Exception           (ErrorCall, handle, throw, throwIO)
 import Control.Monad               (mplus, when)
 import Data.Function               (on)
 import System.IO                   (hPutStrLn, stderr)
-#if !MIN_VERSION_base(4,11,0)
-import Data.Monoid                 ((<>))
-#endif
 
 -- directory
 import System.Directory            (doesFileExist)
@@ -36,9 +30,9 @@ import System.Directory            (doesFileExist)
 import System.FilePath             ((<.>), (</>))
 
 -- hpc
-import Trace.Hpc.Mix               (BoxLabel (..), Mix (..), readMix)
+import Trace.Hpc.Mix               (BoxLabel (..), Mix (..), readMix, MixEntry)
 import Trace.Hpc.Tix               (Tix (..), TixModule (..), readTix)
-import Trace.Hpc.Util              (HpcPos, fromHpcPos)
+import Trace.Hpc.Util              (fromHpcPos)
 
 -- Internal
 import Trace.Hpc.Codecov.Exception
@@ -46,8 +40,12 @@ import Trace.Hpc.Codecov.Exception
 import qualified Text.XML.Light as XML
 import qualified Data.Map.Strict as M
 import           Data.Map.Strict (Map)
-import Data.List (partition, foldl')
+import Data.List (partition, sort)
 import Data.Bifunctor (Bifunctor (bimap))
+import Control.Monad.State (State, modify)
+import Control.Monad.State.Lazy (runState)
+import Control.Arrow (second)
+import Data.Maybe (catMaybes)
 -- ------------------------------------------------------------------------
 --
 -- Exported
@@ -66,21 +64,17 @@ data Report = Report
  , reportExcludes :: [String]
    -- ^ Module name strings to exclude from coverage report.
  , reportOutFile  :: Maybe FilePath
-   -- ^ Output file to write JSON report, if given.
+   -- ^ Output file to write XML report, if given.
  , reportVerbose  :: Bool
    -- ^ Flag for showing verbose message during report generation.
  } deriving (Eq, Show)
 
-#if MIN_VERSION_base(4,11,0)
 instance Semigroup Report where
   (<>) = mappendReport
-#endif
 
 instance Monoid Report where
   mempty = emptyReport
-#if !MIN_VERSION_base(4,16,0)
   mappend = mappendReport
-#endif
 
 emptyReport :: Report
 emptyReport = Report
@@ -113,15 +107,37 @@ data CoverageEntry =
                 , ce_hits     :: [(LineNum, CovInfo)]
                 } deriving (Eq, Show)
 
--- | Pair of line number and hit tag.
-type LineHits = [(Int, Hit)]
+-----------------------------------------------------------------------------
+data Marker = Beg | End deriving (Show, Eq, Ord)
+type HitCnt = Integer
+type LineNum = Int
+type ColNum = Int
 
--- | Data type to represent coverage of source code line.
-data Hit
-  = Missed  -- ^ The line is not covered at all.
-  | Partial -- ^ The line is partially covered.
-  | Full    -- ^ The line is fully covered.
-  deriving (Eq, Show)
+data MixEntryCoverage = MeCovered
+                      | MeNotCovered
+                      deriving (Show, Eq, Ord)
+
+data LineMarker = LineMarker { col    :: !ColNum
+                             , marker :: !Marker
+                             , cov    :: !MixEntryCoverage
+                             } deriving (Show, Eq, Ord)
+
+data LineExpsStat = LineExpsStat { opened :: !Int
+                                 , full   :: !Int -- both opened and closed
+                                 , closed :: !Int
+                                 } deriving (Show, Eq, Ord)
+
+emptyLineExpsStat :: LineExpsStat
+emptyLineExpsStat = LineExpsStat 0 0 0
+
+data CovInfo = CiCovered    { stat :: !LineExpsStat }
+             | CiNotCovered { stat :: !LineExpsStat }
+             | CiPartial { covCnt     :: !Int
+                         , notCovCnt  :: !Int
+                         , covStat    :: !LineExpsStat
+                         , notCovStat :: !LineExpsStat
+                         } deriving (Eq, Show)
+-----------------------------------------------------------------------------
 
 -- | Generate report data from options.
 genReport :: Report -> IO ()
@@ -129,8 +145,7 @@ genReport rpt =
   do entries <- genCoverageEntries rpt
      let mb_out = reportOutFile rpt
          oname = maybe "stdout" show mb_out
-     say rpt ("Writing JSON report to " ++ oname)
-     -- emitCoverageJSON mb_out entries -- FIXME
+     say rpt ("Writing XML report to " ++ oname)
      emitCoverageXML mb_out entries
      say rpt "Done"
 
@@ -142,9 +157,7 @@ genCoverageEntries rpt =
 emitCoverageXML :: Maybe FilePath -> [CoverageEntry] -> IO ()
 emitCoverageXML fp'm es = case fp'm of
   Just file -> writeFile file $ buildXML es
-  Nothing -> putStrLn $ buildXML es
-
-
+  Nothing   -> putStrLn $ buildXML es
 
 -- ------------------------------------------------------------------------
 --
@@ -169,8 +182,8 @@ buildXML es = XML.ppcElement XML.prettyConfigPP el
        [XML.Attr (qn "lineNumber") (show lineNumber)] <> covInfoToCoveredAttrs covInfo
 
     covInfoToCoveredAttrs :: CovInfo -> [XML.Attr]
-    covInfoToCoveredAttrs CiCovered = [mkAttr "covered" "true"]
-    covInfoToCoveredAttrs CiNotCovered = [mkAttr "covered" "false"]
+    covInfoToCoveredAttrs CiCovered{} = [mkAttr "covered" "true"]
+    covInfoToCoveredAttrs CiNotCovered{} = [mkAttr "covered" "false"]
     covInfoToCoveredAttrs CiPartial{covCnt, notCovCnt} =
       [ mkAttr "covered" "true"
       , mkAttr "branchesToCover" (show $ covCnt + notCovCnt)
@@ -187,56 +200,107 @@ tixToCoverage :: Report -> Tix -> IO [CoverageEntry]
 tixToCoverage rpt (Tix tms) = mapM (tixModuleToCoverage rpt)
                                    (excludeModules rpt tms)
 
+calcMarkers :: [(MixEntry, HitCnt)] -> [(LineNum, [LineMarker])]
+calcMarkers = M.toAscList . fmap sort . foldl f M.empty . sort
+  where
+    f :: Map LineNum [LineMarker] -> (MixEntry, HitCnt) -> Map LineNum [LineMarker]
+    f m (mixEntry, cov) =
+      let lineInfos = toLineMarkers mixEntry $ toMixEntryCoverage cov
+          ms = m : map (uncurry M.singleton . second pure) lineInfos
+          m' = sort <$> M.unionsWith (++) ms
+      in fillEmptyLines m'
+
+    fillEmptyLines :: Monoid a => Map LineNum a -> Map LineNum a
+    fillEmptyLines m = case (,) <$> M.lookupMin m <*> M.lookupMax m of
+      Just ((mnl, _), (mxl, _)) ->
+        M.unionWith (<>) m $ M.fromAscList $ zip [mnl .. mxl] $ repeat mempty
+      Nothing -> m
+
+    toMixEntryCoverage :: HitCnt  -> MixEntryCoverage
+    toMixEntryCoverage 0 = MeNotCovered
+    toMixEntryCoverage _ = MeCovered
+
+calcExps :: [LineMarker] -> LineExpsStat
+calcExps = foldl f emptyLineExpsStat
+  where
+    f :: LineExpsStat -> LineMarker -> LineExpsStat
+    f LineExpsStat{opened, ..} LineMarker{marker = Beg} =
+      LineExpsStat {opened = succ opened, ..}
+    f LineExpsStat{opened, full, closed} LineMarker{marker = End}
+      | opened > 0 = LineExpsStat {opened = pred opened, full = succ full, ..}
+      | otherwise = LineExpsStat {closed = succ closed, ..}
+
+-- We are going to need state information when dealing with some
+-- degenerate cases...
+calcCov :: [(LineNum, [LineMarker])] -> [(LineNum, CovInfo)]
+calcCov xs = case flip runState [] $ mapM f xs of
+  (res, st) -> case st of
+    [] -> catMaybes res
+    _  -> error $ "Exp stack is not clean (malformed coverage info): " <> show st
+  where
+    f :: (LineNum, [LineMarker]) -> State [LineMarker] (Maybe (LineNum, CovInfo))
+    f (lno, markers) =  do
+      modify $ \st -> applyToStack st markers
+      let (covStat, notCovStat) = bimap calcExps calcExps $
+                                  partition ((MeCovered ==) . cov) markers
+      pure $ fmap (lno,) $
+        case (countExps covStat, countExps notCovStat) of
+          (0, 0) -> Nothing
+          (_, 0) -> Just $ CiCovered covStat
+          (0, _) -> Just $ CiNotCovered notCovStat
+          (covCnt, notCovCnt) ->
+            Just CiPartial {covCnt, notCovCnt, covStat, notCovStat}
+
+   -- Rules for counting expression in line:
+    -- - expression starts in a line
+    -- - whole expression fits in a line
+    -- - ignore (do not count) expression ends
+    countExps :: LineExpsStat -> Int
+    countExps LineExpsStat{opened, full} = opened + full
+
+applyToStack :: [LineMarker] -> [LineMarker] -> [LineMarker]
+applyToStack = foldl f
+  where
+    f :: [LineMarker] -> LineMarker -> [LineMarker]
+    f [] i@LineMarker{marker = End} =
+      error $ "Trying to pop " <> show i <> " from empty exp stack"
+    f (_:st') LineMarker{marker = End} = st'
+    f st' i@LineMarker{marker = Beg} = i:st'
+
+-- ExpBox contains all coverage information we need,
+-- and it is ok to ignore all other data constructors:
+--   TopLevelBox _ -> [] -- top level fun/term definition
+--   LocalBox _    -> [] -- local (in the "where" clause) fun/term definition
+--   BinBox _ _    -> [] -- Alternative ("if", "guard" etc)
+-- See also: the "Haskell Program Coverage" paper
+-- (available here http://ittc.ku.edu/~andygill/papers/Hpc07.pdf)
+toLineMarkers :: MixEntry -> MixEntryCoverage -> [(LineNum, LineMarker)]
+toLineMarkers (fromHpcPos -> (l1, c1, l2, c2), ExpBox _) cov =
+    [ (l1, LineMarker {col = c1, marker = Beg, cov})
+    , (l2, LineMarker {col = c2, marker = End, cov})
+    ]
+toLineMarkers _ _ = []
+
 tixModuleToCoverage :: Report -> TixModule -> IO CoverageEntry
 tixModuleToCoverage rpt tm@(TixModule name _hash _count ixs) =
-  do say rpt ("Search mix:   " ++ name)
+  do say rpt "<!--"
+     say rpt ("Search mix:   " ++ name)
      Mix path _ _ _ entries <- readMixFile (reportMixDirs rpt) tm
      say rpt ("Found mix:    "++ path)
 
-     let lineHits = makeInfo ixs entries
+     say rpt $ "===> Beg bare " <> path
+     mapM_ (say rpt . show) $ sort $ zip entries ixs
+     say rpt "<=== End bare"
+
+     let lineHits = calcCov $ calcMarkers $ zip entries ixs
+
+     say rpt $ "===> Beg cov " <> path
+     mapM_ (say rpt . show) lineHits
+     say rpt "<=== End cov"
+
      path' <- ensureSrcPath rpt path
-     return (CoverageEntry { ce_filename = path'
-                           , ce_hits = lineHits })
-
-data CovInfo = CiCovered
-             | CiNotCovered
-             | CiPartial { covCnt :: !Int
-                         , notCovCnt :: ! Int
-                         } deriving (Eq, Show)
-
-makeInfo :: [Integer] -> [(HpcPos, BoxLabel)] -> [(LineNum, CovInfo)]
-makeInfo ticks mes =
-  let infos = uncurry zip3 (unzip mes) $ map (>0) ticks
-  in M.toAscList $
-     M.map toCovInfo $
-     foldl' f M.empty infos
-  where
-    toCovInfo :: [Bool] -> CovInfo
-    toCovInfo xs = case bimap length length $ partition (== True) xs of
-      (0, _) -> CiNotCovered
-      (_, 0) -> CiCovered
-      (covCnt, notCovCnt) -> CiPartial {covCnt, notCovCnt}
-
-    f :: Map LineNum [Bool] -> (HpcPos, BoxLabel, Bool) -> Map LineNum [Bool]
-    f acc (hpcPos, lab, cov) = case lab of
-      ExpBox _ -> markSpan acc [ls .. le] cov
-      TopLevelBox _ -> acc
-      LocalBox _ -> markSpan acc [ls .. le] cov
-      BinBox _ _ -> acc
-      where
-        (ls, _, le, _) = fromHpcPos hpcPos
-
-    markSpan :: Map LineNum [Bool] -> [LineNum] -> Bool -> Map LineNum [Bool]
-    markSpan m ls cov = foldl' g m ls
-      where
-        g :: Map LineNum [Bool] -> LineNum -> Map LineNum [Bool]
-        g m' l = M.alter h l m'
-
-        h :: Maybe [Bool] -> Maybe [Bool]
-        h Nothing = Just [cov]
-        h (Just vs) = Just $ cov:vs
-
-type LineNum = Int
+     say rpt "-->"
+     return CoverageEntry {ce_filename = path', ce_hits = lineHits}
 
 -- | Exclude modules specified in given 'Report'.
 excludeModules :: Report -> [TixModule] -> [TixModule]
