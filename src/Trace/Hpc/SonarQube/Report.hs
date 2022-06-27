@@ -294,13 +294,25 @@ tixModuleToCoverage rpt tm@(TixModule name _hash _count ixs) =
      mapM_ (say rpt . show) $ sort $ zip entries ixs
      say rpt "<=== End bare"
 
-     let lineHits = calcCov $ calcMarkers $ zip entries ixs
+     path' <- ensureSrcPath rpt path
+     lineCount <- length . lines <$> readFile path'
+     say rpt $ "File has " <> show lineCount <> " lines"
+
+     -- Some auto-generated code (most notably by
+     -- "record-dot-preprocessor") breaks SonarQube ingestion logic.
+     --
+     -- Reason: Auto-generated code appended at the end of source
+     -- files during one of GHC compilation phases receives coverage
+     -- that refers to source lines non-existent in source files.
+     -- This causes Sonar Scanner to fail.
+     -- Those lines need filtering out.
+     let lineHits = filter ((<= lineCount) . fst) $
+                    calcCov $ calcMarkers $ zip entries ixs
 
      say rpt $ "===> Beg cov " <> path
      mapM_ (say rpt . show) lineHits
      say rpt "<=== End cov"
 
-     path' <- ensureSrcPath rpt path
      say rpt "-->"
      return CoverageEntry {ce_filename = path', ce_hits = lineHits}
 
