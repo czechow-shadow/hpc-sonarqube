@@ -1,12 +1,12 @@
 -- |
--- Module:     Trace.Hpc.Codecov.Discover
+-- Module:     Trace.Hpc.SonarQube.Discover
 -- Copyright:  (c) 2021 8c6794b6
 -- License:    BSD3
 -- Maintainer: 8c6794b6 <8c6794b6@gmail.com>
 --
 -- Walk through directories and find hpc data.
 
-module Trace.Hpc.Codecov.Discover
+module Trace.Hpc.SonarQube.Discover
   ( -- * Discover function and types
     discover
   , DiscoverArgs(..)
@@ -33,8 +33,8 @@ import System.FilePath             (splitFileName, takeExtension,
                                     takeFileName, (<.>), (</>))
 
 -- Internal
-import Trace.Hpc.Codecov.Exception
-import Trace.Hpc.Codecov.Report
+import Trace.Hpc.SonarQube.Exception
+import Trace.Hpc.SonarQube.Report
 
 
 -- ------------------------------------------------------------------------

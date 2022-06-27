@@ -1,23 +1,23 @@
 cabal-version:       2.0
-name:                hpc-codecov
+name:                hpc-sonarqube
 version:             0.3.0.0
-synopsis:            Generate codecov report from hpc data
+synopsis:            Generate SonarQube report from hpc data
 license:             BSD3
 license-file:        LICENSE
-author:              8c6794b6
-maintainer:          8c6794b6@gmail.com
-homepage:            https://github.com/8c6794b6/hpc-codecov#readme
+author:              8c6794b6 (8c6794b6@gmail.com)
+maintainer:          SCB TSTRATS team
 copyright:           (c) 2022 8c6794b6
 category:            Test, Data
 build-type:          Simple
 
 description:
-  The hpc-codecov package contains an executable and library codes for
-  generating <https://codecov.io Codeocv> JSON coverage report from
+  The hpc-sonarqube package contains an executable and library codes for
+  generating <https://www.sonarqube.org SonarQube> XML coverage report from
   @.tix@ and @.mix@ files made with
-  <https://hackage.haskell.org/package/hpc hpc>.  See the
-  <https://github.com/8c6794b6/hpc-codecov#readme README> for
-  more info.
+  <https://hackage.haskell.org/package/hpc hpc>.
+
+  This is almost identical to hpc-codecov utility available
+  <https://github.com/8c6794b6/hpc-codecov#readme HERE>.
 
 extra-source-files:
   README.md
@@ -47,13 +47,13 @@ tested-with:           GHC == 8.2.2
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Trace.Hpc.Codecov.Exception
-                       Trace.Hpc.Codecov.Discover
-                       Trace.Hpc.Codecov.Main
-                       Trace.Hpc.Codecov.Report
-                       Paths_hpc_codecov
-  other-modules:       Trace.Hpc.Codecov.Options
-  autogen-modules:     Paths_hpc_codecov
+  exposed-modules:     Trace.Hpc.SonarQube.Exception
+                       Trace.Hpc.SonarQube.Discover
+                       Trace.Hpc.SonarQube.Main
+                       Trace.Hpc.SonarQube.Report
+                       Paths_hpc_sonarqube
+  other-modules:       Trace.Hpc.SonarQube.Options
+  autogen-modules:     Paths_hpc_sonarqube
   build-depends:       base        >= 4.10  && < 5
                      , array       >= 0.1   && < 0.6
                      , bytestring  >= 0.10  && < 0.12
@@ -66,11 +66,11 @@ library
   default-language:    Haskell2010
   ghc-options:         -Wall
 
-executable hpc-codecov
+executable hpc-sonarqube
   hs-source-dirs:      app
-  main-is:             hpc-codecov.hs
+  main-is:             hpc-sonarqube.hs
   build-depends:       base
-                     , hpc-codecov
+                     , hpc-sonarqube
   default-language:    Haskell2010
   ghc-options:         -Wall -threaded -rtsopts
 
@@ -82,14 +82,10 @@ test-suite test-main
   build-depends:       base
                      , directory
                      , filepath
-                     , hpc-codecov
+                     , hpc-sonarqube
                        --
                      , process     >= 1.6   && < 1.7
                      , tasty       >= 1.0   && < 1.5
                      , tasty-hunit >= 0.8   && < 1.0
   default-language:    Haskell2010
   ghc-options:         -Wall -threaded -rtsopts
-
-source-repository head
-  type:     git
-  location: https://github.com/8c6794b6/hpc-codecov.git

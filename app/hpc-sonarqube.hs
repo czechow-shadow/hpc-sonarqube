@@ -1,4 +1,4 @@
-import Trace.Hpc.Codecov.Main
+import Trace.Hpc.SonarQube.Main
 
 main :: IO ()
 main = defaultMain

@@ -20,8 +20,9 @@ stack.yaml.lock
 # Miscellaneous
 .hpc
 a.out
-codecov.json
-hpc-codecov.tix
+coverage.xml
+hpc-sonarqube.tix
 tmp/
-.hpc_codecov_test_tmp*
+.hpc_sonarqube_test_tmp*
 test/data/project1/dot-stack-work
+TAGS

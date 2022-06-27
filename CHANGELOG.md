@@ -1,4 +1,8 @@
-# Revision history for hpc-codecov
+# Revision history for hpc-sonarqube
+
+## Support SonarQube instead of Codecov (SCB adapations) -- 2022-06-27
+Modify coverage logic. Emit XML instead of JSON. Change module and
+executable names.
 
 ## 0.3.0.0 -- 2021-04-02
 

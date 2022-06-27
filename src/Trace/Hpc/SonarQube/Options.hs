@@ -1,13 +1,13 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
--- Module:     Trace.Hpc.Codecov.Options
+-- Module:     Trace.Hpc.SonarQube.Options
 -- Copyright:  (c) 2022 8c6794b6
 -- License:    BSD3
 -- Maintainer: 8c6794b6 <8c6794b6@gmail.com>
 --
--- Command line options for generating Codecov test coverage report.
+-- Command line options for generating SonarQube test coverage report.
 
-module Trace.Hpc.Codecov.Options
+module Trace.Hpc.SonarQube.Options
   (
     -- * The Options type and predefined values
     Options(..)
@@ -38,10 +38,10 @@ import System.Directory            (doesFileExist)
 
 
 -- Internal
-import Paths_hpc_codecov           (version)
-import Trace.Hpc.Codecov.Discover
-import Trace.Hpc.Codecov.Exception
-import Trace.Hpc.Codecov.Report
+import Paths_hpc_sonarqube         (version)
+import Trace.Hpc.SonarQube.Discover
+import Trace.Hpc.SonarQube.Exception
+import Trace.Hpc.SonarQube.Report
 
 -- | Options for generating test coverage report.
 data Options = Options
@@ -248,11 +248,11 @@ printVersion =
 -- | Help message for command line output.
 helpMessage :: String -- ^ Executable program name.
             -> String
-helpMessage name = usageInfo header options ++ footer
+helpMessage name = usageInfo header options
   where
     header = "USAGE: " ++ name ++ " [OPTIONS] TARGET\n\
 \\n\
-\Generate Codecov JSON coverage report for Haskell source codes\n\
+\Generate SonarQube JSON coverage report for Haskell source codes\n\
 \from .tix and .mix files made with hpc.\n\
 \\n\
 \TARGET is either a path to .tix file or 'TOOL:TEST_SUITE'.\n\
@@ -261,12 +261,6 @@ helpMessage name = usageInfo header options ++ footer
 \TEST_SUITE value to refer the combined report.\n\
 \\n\
 \OPTIONS:\n"
-    footer = "\
-\\n\
-\For more info, see:\n\
-\\n\
-\  https://github.com/8c6794b6/hpc-codecov#readme\n\
-\\n"
 
 -- | String representation of the version number of this package.
 versionString :: String

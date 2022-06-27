@@ -1,16 +1,18 @@
 {-# LANGUAGE NamedFieldPuns   #-}
 {-# LANGUAGE ViewPatterns     #-}
 {-# LANGUAGE RecordWildCards  #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections    #-}
 -- |
--- Module:     Trace.Hpc.Codecov.Report
+-- Module:     Trace.Hpc.SonarQube.Report
 -- Copyright:  (c) 2022 8c6794b6
 -- License:    BSD3
 -- Maintainer: 8c6794b6 <8c6794b6@gmail.com>
 --
--- Generate Codecov report data.
+-- Generate SonarQube report data.
+--
+-- Adapted from Codecov by SCB TSTRATS team.
 
-module Trace.Hpc.Codecov.Report
+module Trace.Hpc.SonarQube.Report
   ( -- * Types
     Report(..)
     -- * Functions
@@ -35,7 +37,7 @@ import Trace.Hpc.Tix               (Tix (..), TixModule (..), readTix)
 import Trace.Hpc.Util              (fromHpcPos)
 
 -- Internal
-import Trace.Hpc.Codecov.Exception
+import Trace.Hpc.SonarQube.Exception
 
 import qualified Text.XML.Light as XML
 import qualified Data.Map.Strict as M
@@ -100,7 +102,7 @@ mappendReport r1 r2 =
 -- | Single file entry in coverage report.
 --
 -- See the
--- <https://docs.codecov.io/docs/codecov-custom-coverage-format Codecov documentation>
+-- <https://docs.sonarqube.org/8.9/analysis/generic-test/ SonarQube documentation>
 -- for detail.
 data CoverageEntry =
   CoverageEntry { ce_filename :: FilePath -- ^ Source code file name.

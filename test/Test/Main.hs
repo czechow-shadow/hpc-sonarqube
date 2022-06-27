@@ -1,5 +1,5 @@
 {-# LANGUAGE CPP #-}
--- | Test codes for running @hpc-codecov@ executable.
+-- | Test codes for running @hpc-sonarqube@ executable.
 module Test.Main (main) where
 
 -- base
@@ -41,9 +41,9 @@ import           Test.Tasty.HUnit           (assertEqual, assertFailure,
                                              testCase)
 
 -- Internal
-import           Trace.Hpc.Codecov.Discover
-import qualified Trace.Hpc.Codecov.Main     as HpcCodecov
-import           Trace.Hpc.Codecov.Report
+import           Trace.Hpc.SonarQube.Discover
+import qualified Trace.Hpc.SonarQube.Main     as HpcSonarQube
+import           Trace.Hpc.SonarQube.Report
 
 
 -- ------------------------------------------------------------------------
@@ -123,11 +123,11 @@ recipReport = testGroup "recip"
                        ,"test/data/reciprocal/reciprocal.tix"]))
   ]
 
--- Note: Running test to generate .mix and .tix of hpc-codecov package
+-- Note: Running test to generate .mix and .tix of hpc-sonarqube package
 -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 --
 -- The test recursively runs itself to generate .mix and .tix files of
--- the hpc-codecov package itself.
+-- the hpc-sonarqube package itself.
 --
 -- To terminate the recursive run, the "main" function in this module
 -- is looking up an environment variable to check whether the test is
@@ -186,7 +186,7 @@ getSelfReportStackArgs wd = do
     (Just tix, Just mix) -> do
       return emptySRA { sra_tix = tix
                       , sra_mixs = [mix]
-                      , sra_excludes = ["Paths_hpc_codecov"] }
+                      , sra_excludes = ["Paths_hpc_sonarqube"] }
     _ -> error "getting arguments for self test with stack failed"
 
 -- setupV1 :: FilePath -> IO ()
@@ -234,7 +234,7 @@ getSelfReportCabalArgs setup bd = do
       mixs <- map (mixdir </>) <$> listDirectory mixdir
       return emptySRA { sra_tix = tix
                       , sra_mixs = mixs
-                      , sra_excludes = ["Main", "Paths_hpc_codecov"] }
+                      , sra_excludes = ["Main", "Paths_hpc_sonarqube"] }
 
 selfReport :: IO SRA -> TestTree
 selfReport getArgs = testGroup "self"
@@ -383,7 +383,7 @@ isTestInTest :: IO Bool
 isTestInTest = isJust <$> lookupEnv testInTestKey
 
 testInTestKey :: String
-testInTestKey = "HPC_CODECOV_TEST_IN_TEST"
+testInTestKey = "HPC_SONARQUBE_TEST_IN_TEST"
 
 findUnder :: (FilePath -> Bool) -> FilePath -> IO (Maybe FilePath)
 findUnder test root = foldDir f Nothing [root]
@@ -394,10 +394,10 @@ findUnder test root = foldDir f Nothing [root]
          then return (Just path)
          else return Nothing
 
--- | Wrapper to run 'Trace.Hpc.Codecov.Main.main' with given argument
+-- | Wrapper to run 'Trace.Hpc.SonarQube.Main.main' with given argument
 -- strings.
 main' :: [String] -> IO ()
-main' args = withArgs args HpcCodecov.defaultMain
+main' args = withArgs args HpcSonarQube.defaultMain
 
 sraMain :: SRA -> IO ()
 sraMain sra = main' args
@@ -424,8 +424,8 @@ withTempDir = withResource acquire release
      acquire = do
        mb_tool <- getBuildTool
        dir <- case mb_tool of
-         Just Stack -> pure ".hpc_codecov_test_tmp_stack"
-         Just Cabal -> pure ".hpc_codecov_test_tmp_cabal_v2"
+         Just Stack -> pure ".hpc_sonarqube_test_tmp_stack"
+         Just Cabal -> pure ".hpc_sonarqube_test_tmp_cabal_v2"
          _          -> error "Cannot determine build tool"
        exists <- doesDirectoryExist dir
        when exists $ removeDirectoryRecursive dir

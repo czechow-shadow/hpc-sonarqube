@@ -1,19 +1,13 @@
-# hpc-codecov [![Hackage](https://img.shields.io/hackage/v/hpc-codecov)](https://hackage.haskell.org/package/hpc-codecov) [![Stackage](https://www.stackage.org/package/hpc-codecov/badge/lts)](https://www.stackage.org/lts/package/hpc-codecov)
+# hpc-sonarqube
 
-[![codecov](https://codecov.io/gh/8c6794b6/hpc-codecov/branch/master/graph/badge.svg)](https://codecov.io/gh/8c6794b6/hpc-codecov)
-[![Travis](http://img.shields.io/travis/8c6794b6/codecov-haskell/master.svg?logo=travis)](https://travis-ci.com/8c6794b6/hpc-codecov)
-[![CircleCI](https://img.shields.io/circleci/build/gh/8c6794b6/hpc-codecov/master?logo=circleci)](https://circleci.com/gh/8c6794b6/hpc-codecov)
-[![AppVeyor](https://ci.appveyor.com/api/projects/status/dijqtsoqgc26oghj?svg=true)](https://ci.appveyor.com/project/8c6794b6/hpc-codecov)
-[![GitHub](https://img.shields.io/github/workflow/status/8c6794b6/hpc-codecov/ci?logo=github)](https://github.com/8c6794b6/hpc-codecov/actions/workflows/ci.yml)
-
-The ``hpc-codecov`` package contains an executable and library codes
-for generating [Codecov](https://codecov.io) JSON coverage report from
-``.tix`` and ``.mix`` files made with
+The ``hpc-sonarqube`` package contains an executable and library codes
+for generating [SonarQube](https://https://www.sonarqube.org) XML
+coverage report from ``.tix`` and ``.mix`` files made with
 [hpc](https://hackage.haskell.org/package/hpc). The generated report
-is ready to be uploaded to Codecov with other tools such as [Codecov
-uploader](https://docs.codecov.com/docs/codecov-uploader).
+is ready to be uploaded to SonarQube with other tools such as [Sonar
+scanner](https://docs.sonarqube.org/latest/analysis/scan/sonarscanner).
 
-The ``hpc-codecov`` executable can search ``.tix`` and ``mix`` files
+The ``hpc-sonarqube`` executable can search ``.tix`` and ``mix`` files
 under the directories made by the
 [cabal-install](http://hackage.haskell.org/package/cabal-install) and
 [stack](https://docs.haskellstack.org/en/stable/README/) build tools.
@@ -28,27 +22,17 @@ Installing
 
 ### From Package Repository
 
-``hpc-codecov`` is available from
-[Hackage](https://hackage.haskell.org/package/hpc-codecov) and
-[Stackage](https://www.stackage.org/lts/package/hpc-codecov).  To
-install with ``cabal-install``, run:
+To install with ``cabal-install``, run:
 
 ```console
-$ cabal install hpc-codecov
+$ cabal install hpc-sonarqube
 ```
 
 To install with ``stack``, run:
 
 ```console
-$ stack install hpc-codecov
+$ stack install hpc-sonarqube
 ```
-
-### Pre-compiled binaries
-
-For Windows, MacOS, and Linux (with glibc and libgmp), pre-compiled
-binary executables are available
-[here](https://github.com/8c6794b6/hpc-codecov/releases/latest).
-
 
 QuickStart
 ----------
@@ -83,26 +67,24 @@ Run tests with coverage option:
 $ cabal test --enable-coverage
 ```
 
-Write Codecov coverage report to ``codecov.json``:
+Write SonarQube coverage report to ``coverage.xml``:
 
 ```console
-$ hpc-codecov cabal:my-project-test -X my-project -o codecov.json
+$ hpc-sonarqube cabal:my-project-test -X my-project -o coverage.xml
 ```
 
 Show coverage report contents:
 
 ```console
-$ cat codecov.json
-{"coverage":{"test/MyLibTest.hs":{"4":1}}}
+$ cat coverage.xml
+<coverage version="1">
+  <file path="test/data/project1/src/Lib.hs">
+    <lineToCover lineNumber="7" covered="true" />
+    <lineToCover lineNumber="8" covered="true" />
+    <lineToCover lineNumber="9" covered="false" />
+  </file>
+</coverage>
 ```
-
-
-Using in GitHub workflow
-------------------------
-
-See
-[hpc-codecov-action](https://github.com/8c6794b6/hpc-codecov-action)
-to generate Codecov coverage report from GitHub workflow.
 
 
 Examples
@@ -113,7 +95,7 @@ Examples
 Show usage information:
 
 ```console
-$ hpc-codecov --help
+$ hpc-sonarqube --help
 ```
 
 ### Project using cabal-install
@@ -125,26 +107,26 @@ directories with base name ``my-project``, and exclude modules named
 comma to separate multiple values for the ``-x`` option:
 
 ```console
-$ hpc-codecov -X my-project -x Main,Paths_my_project cabal:my-project-test
+$ hpc-sonarqube -X my-project -x Main,Paths_my_project cabal:my-project-test
 ```
 
 ### Project using stack
 
 Search under directory made by ``stack`` for test suite named
 ``my-project-test``, show verbose information, and write output to
-``codecov.json``:
+``coverage.xml``:
 
 ```console
-$ hpc-codecov --verbose -o codecov.json stack:my-project-test
+$ hpc-sonarqube --verbose -o coverage.xml stack:my-project-test
 ```
 
 ### Project using stack, with multiple packages
 
 Search under directory made by ``stack`` for combined report of
-multiple cabal packages, and write output to ``codecov.json``:
+multiple cabal packages, and write output to ``coverage.xml``:
 
-```consle
-$ hpc-codecov stack:all -o codecov.json
+```console
+$ hpc-sonarqube stack:all -o coverage.xml
 ```
 
 
@@ -152,7 +134,7 @@ Low-level examples
 ------------------
 
 The following shows two examples for generating a test coverage report
-of the ``hpc-codecov`` package itself without specifying the build
+of the ``hpc-sonarqube`` package itself without specifying the build
 tool. One with using the build artifacts made by ``cabal-install``
 Nix-style local build commands, and another with ``stack``.
 
@@ -169,52 +151,18 @@ $ cabal v2-configure --enable-test --enable-coverage
 $ cabal v2-test
 ```
 
-Then generate a Codecov JSON coverage data from the ``.tix`` and
+Then generate a SonarQube XML coverage data from the ``.tix`` and
 ``.mix`` files:
 
 ```console
-$ proj=hpc-codecov-0.3.0.0
+$ proj=hpc-sonarqube-0.3.0.0
 $ tix=$(find ./dist-newstyle -name $proj.tix)
 $ mix=$(find ./dist-newstyle -name vanilla -print -quit)/mix/$proj
-$ hpc-codecov --mix=$mix --exclude=Paths_hpc_codecov --out=codecov.json $tix
+$ hpc-sonarqube --mix=$mix --exclude=Paths_hpc_sonarqube --out=coverage.xml $tix
 ```
 
-The ``--out`` option specifies the output file to write the JSON
-report. Observing the contents of ``codecov.json`` with
-[``jq``](https://stedolan.github.io/jq/):
-
-```console
-$ jq . codecov.json | head -10
-{
-  "coverage": {
-    "src/Trace/Hpc/Codecov/Options.hs": {
-      "48": 1,
-      "50": 1,
-      "52": 1,
-      "54": 1,
-      "56": 1,
-      "59": 1,
-      "63": 1,
-```
-
-Send the resulting JSON report file to Codecov with the [Codecov
-uploader](https://github.com/codecov/uploader). The file name
-``codecov.json`` is listed in the uploader script as one of the file
-name patterns to upload, no need to specify the report filename
-explicitly:
-
-```console
-$ codecov -t ${CODECOV_TOKEN}
-```
-
-According to the Codecov
-[FAQ](https://docs.codecov.io/docs/frequently-asked-questions), the
-uploader should work from [Travis](https://travis-ci.com/),
-[CircleCI](https://circleci.com/),
-[Azure](https://azure.microsoft.com/en-us/services/devops/pipelines),
-and [GitHub Actions](https://github.com/features/actions) for public
-projects without the Codecov token (i.e., without the `-t
-${CODECOV_TOKEN}` option).
+The ``--out`` option specifies the output file to write the XML
+report.
 
 
 ### With stack
@@ -235,7 +183,7 @@ directory and dist directory:
 $ hpcroot=$(stack path --local-hpc-root)
 $ tix=$(find $hpcroot -name 'test-main.tix')
 $ mix=$(stack path --dist-dir)/hpc
-$ hpc-codecov --mix=$mix --exclude=Paths_hpc_codecov -o codecov.json $tix
+$ hpc-sonarqube --mix=$mix --exclude=Paths_hpc_sonarqube -o coverage.xml $tix
 ```
 
 
@@ -243,4 +191,4 @@ References
 ----------
 
 - [HPC publication](http://ittc.ku.edu/~andygill/papers/Hpc07.pdf)
-- [Codecov API reference](https://docs.codecov.io/reference)
+- [SonarQube import coverage](https://docs.sonarqube.org/latest/analysis/test-coverage/generic-test)

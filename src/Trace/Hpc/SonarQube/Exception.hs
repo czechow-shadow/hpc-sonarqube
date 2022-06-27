@@ -1,15 +1,15 @@
 -- |
--- Module:     Trace.Hpc.Codecov.Exception
+-- Module:     Trace.Hpc.SonarQube.Exception
 -- Copyright:  (c) 2022 8c6794b6
 -- License:    BSD3
 -- Maintainer: 8c6794b6 <8c6794b6@gmail.com>
 --
 -- Error and exception related codes.
 
-module Trace.Hpc.Codecov.Exception
+module Trace.Hpc.SonarQube.Exception
   (
     -- * Exception data type and handler
-    HpcCodecovError(..)
+    HpcSonarQubeError(..)
   , withBriefUsageOnError
   ) where
 
@@ -18,7 +18,7 @@ import Control.Exception  (Exception (..), handle)
 import System.Environment (getProgName)
 import System.Exit        (exitFailure)
 
--- | Run the given action with a handler for 'HpcCodecovError'.
+-- | Run the given action with a handler for 'HpcSonarQubeError'.
 --
 -- The handler will show a brief usage and call 'exitFailure' when an
 -- exception was caught.
@@ -26,7 +26,7 @@ withBriefUsageOnError :: IO a   -- ^ Action to perform.
                       -> IO a
 withBriefUsageOnError = handle handler
   where
-    handler :: HpcCodecovError -> IO a
+    handler :: HpcSonarQubeError -> IO a
     handler e =
       do putStr ("Error: " ++ displayException e)
          name <- getProgName
@@ -34,7 +34,7 @@ withBriefUsageOnError = handle handler
          exitFailure
 
 -- | Exceptions thrown during coverage report generation.
-data HpcCodecovError
+data HpcSonarQubeError
   = NoTarget
    -- ^ Target was not given.
   | TixNotFound FilePath
@@ -54,11 +54,11 @@ data HpcCodecovError
    -- specified.
   deriving (Show)
 
-instance Exception HpcCodecovError where
-  displayException = hpcCodecovErrorMessage
+instance Exception HpcSonarQubeError where
+  displayException = hpcSonarQubeErrorMessage
 
-hpcCodecovErrorMessage :: HpcCodecovError -> String
-hpcCodecovErrorMessage e =
+hpcSonarQubeErrorMessage :: HpcSonarQubeError -> String
+hpcSonarQubeErrorMessage e =
   case e of
     NoTarget -> "no TARGET was given\n"
     TixNotFound tix -> "cannot find tix: " ++ show tix ++ "\n"
